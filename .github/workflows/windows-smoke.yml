@@ -15,10 +15,10 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $url = 'https://github.com/Polyglot-xD/kingdoms-online-prototype-builds/releases/download/v0.1.0-alpha-windows/KingdomsOnline-Windows-x64-2026-10-13.zip'
+          $url = 'https://github.com/Polyglot-xD/kingdoms-online-prototype-builds/releases/download/v0.1.1-windows/KingdomsOnline-Windows-x64-v0.1.1.zip'
           Invoke-WebRequest -Uri $url -OutFile game.zip
           $actual = (Get-FileHash game.zip -Algorithm SHA256).Hash.ToLowerInvariant()
-          $expected = 'e1de19663d68a435f85a69224682e341cc70e57c1dad729d5e3d17dec77c21ec'
+          $expected = '8c75ed477756e498bc71a738a624f0c43a4646392e01da74e768e4812e443be7'
           if ($actual -ne $expected) { throw "Checksum mismatch: $actual" }
           Expand-Archive game.zip -DestinationPath game
           if (!(Test-Path game/KingdomsOnline.exe)) { throw 'KingdomsOnline.exe missing from release' }
@@ -72,10 +72,36 @@ jobs:
             if (!$process.HasExited) { Stop-Process -Id $process.Id -Force }
           }
 
+      - name: Prove world persistence across restart
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $token = "gha-$env:GITHUB_RUN_ID"
+          $writeLog = Join-Path $pwd 'windows-persistence-write.log'
+          $readLog = Join-Path $pwd 'windows-persistence-read.log'
+          $writer = Start-Process -FilePath "$pwd/game/KingdomsOnline.exe" -ArgumentList @('-batchmode', '-nographics', '-persistence-smoke-write', $token, '-logFile', $writeLog) -Wait -PassThru
+          if ($writer.ExitCode -ne 0) { throw "Persistence writer exited with code $($writer.ExitCode)" }
+          if (!(Select-String -Path $writeLog -Pattern "[PersistenceSmoke] wrote token=$token" -SimpleMatch -Quiet)) {
+            throw 'First launch did not atomically write the persistence token'
+          }
+          $reader = Start-Process -FilePath "$pwd/game/KingdomsOnline.exe" -ArgumentList @('-batchmode', '-nographics', '-persistence-smoke-read', $token, '-logFile', $readLog) -Wait -PassThru
+          if ($reader.ExitCode -ne 0) { throw "Persistence reader exited with code $($reader.ExitCode)" }
+          if (!(Select-String -Path $readLog -Pattern "[Persistence] Loaded revision" -SimpleMatch -Quiet)) {
+            throw 'Second launch did not load a local world snapshot'
+          }
+          if (!(Select-String -Path $readLog -Pattern "[PersistenceSmoke] restored token=$token" -SimpleMatch -Quiet)) {
+            throw 'Second launch loaded a snapshot but did not restore the saved world token'
+          }
+          Get-Content $writeLog -Tail 40
+          Get-Content $readLog -Tail 60
+
       - name: Upload Windows startup log
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: windows-startup-log
-          path: windows-player.log
+          path: |
+            windows-player.log
+            windows-persistence-write.log
+            windows-persistence-read.log
           if-no-files-found: warn
