@@ -60,6 +60,12 @@ jobs:
               }
             }
             if (!$localJoined) { throw 'Host world started, but the default local player never registered with it' }
+            $fatalPatterns = @('NullReferenceException', 'Unhandled Exception', 'Crash!!!', 'Aborting batchmode')
+            foreach ($pattern in $fatalPatterns) {
+              if (Select-String -Path $log -Pattern $pattern -SimpleMatch -Quiet) {
+                throw "Fatal startup marker found in Windows log: $pattern"
+              }
+            }
             Get-Content $log -Tail 120
           }
           finally {
