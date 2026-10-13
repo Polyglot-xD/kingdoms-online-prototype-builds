@@ -50,6 +50,16 @@ jobs:
               }
             }
             if (!$worldReady) { throw 'Persistent economy/world startup marker was not observed' }
+            $localJoined = $false
+            for ($i = 0; $i -lt 45; $i++) {
+              Start-Sleep -Seconds 1
+              if ($process.HasExited) { throw "Player exited before its local client joined with code $($process.ExitCode)" }
+              if (Select-String -Path $log -Pattern '\[ScaleNet\] connections=1\b' -Quiet) {
+                $localJoined = $true
+                break
+              }
+            }
+            if (!$localJoined) { throw 'Host world started, but the default local player never registered with it' }
             Get-Content $log -Tail 120
           }
           finally {
@@ -63,4 +73,3 @@ jobs:
           name: windows-startup-log
           path: windows-player.log
           if-no-files-found: warn
-
