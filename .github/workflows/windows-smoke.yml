@@ -1,0 +1,66 @@
+name: Windows release smoke test
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  launch-host:
+    runs-on: windows-2025
+    timeout-minutes: 12
+    steps:
+      - name: Download and verify release
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $url = 'https://github.com/Polyglot-xD/kingdoms-online-prototype-builds/releases/download/v0.1.0-alpha-windows/KingdomsOnline-Windows-x64-2026-10-13.zip'
+          Invoke-WebRequest -Uri $url -OutFile game.zip
+          $actual = (Get-FileHash game.zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          $expected = 'e1de19663d68a435f85a69224682e341cc70e57c1dad729d5e3d17dec77c21ec'
+          if ($actual -ne $expected) { throw "Checksum mismatch: $actual" }
+          Expand-Archive game.zip -DestinationPath game
+          if (!(Test-Path game/KingdomsOnline.exe)) { throw 'KingdomsOnline.exe missing from release' }
+
+      - name: Launch default single-player host
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $log = Join-Path $pwd 'windows-player.log'
+          $process = Start-Process -FilePath "$pwd/game/KingdomsOnline.exe" -ArgumentList @('-batchmode', '-nographics', '-logFile', $log) -PassThru
+          try {
+            $ready = $false
+            for ($i = 0; $i -lt 90; $i++) {
+              Start-Sleep -Seconds 1
+              if ($process.HasExited) { throw "Player exited early with code $($process.ExitCode)" }
+              if ((Test-Path $log) -and (Select-String -Path $log -Pattern 'Server listening on port 7777' -Quiet)) {
+                $ready = $true
+                break
+              }
+            }
+            if (!$ready) { throw 'Default launch never started the local authoritative host' }
+            $worldReady = $false
+            for ($i = 0; $i -lt 90; $i++) {
+              Start-Sleep -Seconds 1
+              if ($process.HasExited) { throw "Player exited during world startup with code $($process.ExitCode)" }
+              if (Select-String -Path $log -Pattern '\[GrandRail\].*citizens online' -Quiet) {
+                $worldReady = $true
+                break
+              }
+            }
+            if (!$worldReady) { throw 'Persistent economy/world startup marker was not observed' }
+            Get-Content $log -Tail 120
+          }
+          finally {
+            if (!$process.HasExited) { Stop-Process -Id $process.Id -Force }
+          }
+
+      - name: Upload Windows startup log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-startup-log
+          path: windows-player.log
+          if-no-files-found: warn
+
