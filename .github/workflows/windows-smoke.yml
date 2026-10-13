@@ -15,10 +15,10 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $url = 'https://github.com/Polyglot-xD/kingdoms-online-prototype-builds/releases/download/v0.1.1-windows/KingdomsOnline-Windows-x64-v0.1.1.zip'
+          $url = 'https://github.com/Polyglot-xD/kingdoms-online-prototype-builds/releases/download/v0.1.2-windows/KingdomsOnline-Windows-x64-v0.1.2.zip'
           Invoke-WebRequest -Uri $url -OutFile game.zip
           $actual = (Get-FileHash game.zip -Algorithm SHA256).Hash.ToLowerInvariant()
-          $expected = '8c75ed477756e498bc71a738a624f0c43a4646392e01da74e768e4812e443be7'
+          $expected = '24c87f18c025ef88e629e86c21e4748bb14ab2f538ed0ffb4608de8dd91d8ce9'
           if ($actual -ne $expected) { throw "Checksum mismatch: $actual" }
           Expand-Archive game.zip -DestinationPath game
           if (!(Test-Path game/KingdomsOnline.exe)) { throw 'KingdomsOnline.exe missing from release' }
